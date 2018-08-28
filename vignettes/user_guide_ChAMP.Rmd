@@ -1,0 +1,99 @@
+---
+title: "'skima' user guide"
+author: "Xavier Pastor"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{'skima' user guide}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+'skima' has been developed in the very specific context of methylation profiling in cancer, so it may not be suited for other analysis. It has been conceived to avoid researchers the task of going through the tedious process of trying processing methods and analysis tools, and having to pick one without much fundament. So unlike other packages, 'skima' does not allow the selection of the normalization methods by the user, performing ENmix background correction and SWAN normalization to correct the intensities.
+With this idea in mind, the core function of 'skima' runs the whole data processing and analysis, including intensities correction, normalization, probe filtering, QC, gender determination, CNV analysis, differential methylation and enrichment analysis.
+To run the full analysis just execute the following function:
+```{r eval=FALSE}
+run()
+```
+By default, the function will take the values from a list of environment variables where only two of them need to be defined by the user: **IDAT_DIR**, with the path to the directory where the idat files are located, and **SAMPLE_ANNOTATION**, with the path to a csv file similar to the sample sheet provided by Illumina.
+
+It is also possible to pass parameters to the function instead:
+```{r eval=FALSE}
+dataDir = system.file('extdata', package = 'ChAMPdata')
+run(idat_dir = dataDir)
+run(idat_dir = dataDir, sample.annotation = NULL, blacklist = NULL, outdir = getwd(), runCNV = FALSE, diffMeth = TRUE, removeSNPs = TRUE, population='', usePredictedSex = TRUE, batch.vars = batch.vars, seed = NULL, ncores = 1)
+```
+run(idat_dir = dataDir, outdir='/icgc/dkfzlsdf/analysis/B080/pastor/skima_test/run3')
+run(idat_dir = dataDir, outdir = '/icgc/dkfzlsdf/analysis/B080/pastor/skima_test/run5', runCNV = FALSE, diffMeth = TRUE, removeSNPs = TRUE, population = 'EUR', usePredictedSex = TRUE, seed = 13, ncores = 1)
+
+```{r eval=TRUE}
+library(skima)
+library(minfi)
+dataDir = system.file('extdata', package = 'ChAMPdata')
+targets = read.metharray.sheet(dataDir)
+outdir = '/icgc/dkfzlsdf/analysis/B080/pastor/skima_test/run5'
+usePredictedSex = TRUE
+obj = preprocess(dataDir, targets = targets, blacklist = NULL, batch.vars = NULL, removeSNPs = T, population = 'EUR', usePredictedSex = usePredictedSex, runCNV = F, outdir = outdir)
+
+M = obj$M
+betas = obj$betas
+targets = obj$targets
+array.annot.gr = obj$array.annot.gr
+
+ok = names(array.annot.gr)[array.annot.gr$score==0]
+
+top_var = apply(betas[ok,], 1, sd)
+top_var = rank(-top_var, na.last = TRUE)
+top_var = rownames(betas[ok,])[top_var <= 50000]
+pca = prcomp(t(betas[top_var,]), scale. = TRUE, center = TRUE)
+groups = targets$Sample_Group
+names(groups) = row.names(targets)
+annotatedPCA(pca, groups, main='Sample_Group', return.grob = FALSE)
+groups = targets$predictedSex
+names(groups) = row.names(targets)
+annotatedPCA(pca, groups, main='predictedSex', return.grob = FALSE)
+```
+
+```{r eval=FALSE}
+fit = differentialMethylation(M = M[ok,], targets = targets[,c('Sample_Group', 'predictedSex')], array.annot.gr = array.annot.gr, betas = betas[ok,], interest.vars = 'Sample_Group'), outdir = outdir, ncores = 1, invisible = F)
+```
+
+```{r eval=TRUE}
+fit = run_limma(M[ok,], targets[,'Sample_Group', drop = F])
+comparison = 'Sample_Group'
+var.coefs = grep(paste0('^', comparison), colnames(fit$design), value=T)
+top = topTable(fit, coef = var.coefs, number = Inf, sort.by = 'none')
+adjP = grep('adj.P.Val', colnames(top))
+sig = row.names(top)[top[,adjP] <= 0.05 & !is.na(top[,adjP])]
+groups = targets$Sample_Group
+names(groups) = row.names(targets)
+pca = prcomp(t(betas[sig,]), scale. = TRUE, center = TRUE)
+annotatedPCA(pca, groups, 'Sample Group', return.grob = FALSE)
+annotatedCluster(betas[sig,], annotation = targets[,'Sample_Group', drop = FALSE], dend_height = unit(5, 'cm'))
+```
+
+```{r eval=FALSE}
+dmp_out = file.path(outdir, 'DMP')
+dir.create(dmp_out)
+top = report_significance(betas[ok,], fit, coef = comparison, prefix = file.path(dmp_out, comparison), invisible=F)
+head(top)
+```
+
+```{r eval=TRUE}
+betafit = run_limma(betas[ok,], targets[,c('Sample_Group', 'predictedSex')])
+betatop = topTable(betafit, coef = var.coefs, number = Inf, sort = 'none')
+dmr.gr = DMR_detection(top, betatop, chr = as.character(seqnames(array.annot.gr[rownames(top)])), pos = end(array.annot.gr[rownames(top)]), ncores = 1)
+dmr.sig = dmr.gr[order(dmr.gr$Stouffer)]
+L = cumsum(dmr.sig$no.cpgs)
+n.dmr = sum(L <= 500)
+dmr.sig = head(dmr.sig, n.dmr)
+array.annot.gr = array.annot.gr[rownames(betas),]
+array.annot.gr = sort(array.annot.gr)
+overlap = findOverlaps(array.annot.gr, dmr.sig)
+cpg.dmr = array.annot.gr[queryHits(overlap),]
+#hc.width = .get_dev_width(betas, name = '', annotation_names = colnames(annot))
+annotatedHeatmap(betas[names(cpg.dmr),], column_annotation = targets[,'Sample_Group', drop=F], row_annotation = data.frame(Chromosome=as.character(seqnames(cpg.dmr)), row.names=names(cpg.dmr), stringsAsFactors=F), cluster_rows = F, show_row_names = F, name = 'Beta', row_dend_side = 'left')
+
+report_DMRs(dmr.gr, array.annot.gr, betas=betas, annot=targets[,comparison,drop=F], prefix=prefix)
+```
+

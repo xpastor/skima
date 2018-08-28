@@ -1,0 +1,30 @@
+---
+title: "'skima' user guide"
+author: "Xavier Pastor"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{'skima' user guide}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+'skima' has been developed in the very specific context of methylation profiling in cancer, so it may not be suited for other analysis. It has been conceived to avoid researchers the task of going through the tedious process of trying processing methods and analysis tools, and having to pick one without much fundament. So unlike other packages, 'skima' does not allow the selection of the normalization methods by the user, performing ENmix background correction and SWAN normalization to correct the intensities.
+With this idea in mind, the core function of 'skima' runs the whole data processing and analysis, including intensities correction, normalization, probe filtering, QC, gender determination, CNV analysis, differential methylation and enrichment analysis.
+To run the full analysis just execute the following function:
+```{r eval=FALSE}
+run()
+```
+By default, the function will take the values from a list of environment variables where only two of them need to be defined by the user: **IDAT_DIR**, with the path to the directory where the idat files are located, and **SAMPLE_ANNOTATION**, with the path to a csv file similar to the sample sheet provided by Illumina.
+
+It's also possible to pass parameters to the function insteadf:
+```{r eval=FALSE}
+dataDir = system.file('extdata', package = 'minfiData')
+batch.vars = c('sex')
+run(idat_dir = dataDir)
+run(idat_dir = dataDir, sample.annotation = NULL, blacklist = NULL, outdir = getwd(), runCNV = FALSE, diffMeth = TRUE, removeSNPs = TRUE, population='', usePredictedSex = FALSE, batch.vars = batch.vars, seed = NULL, ncores = 1)
+```
+run(idat_dir = dataDir, outdir='/icgc/dkfzlsdf/analysis/B080/pastor/skima_test/run3')
+run(idat_dir = dataDir, outdir = '/icgc/dkfzlsdf/analysis/B080/pastor/skima_test/run4', runCNV = FALSE, diffMeth = TRUE, removeSNPs = TRUE, population='EUR', usePredictedSex = FALSE, batch.vars = 'sex', seed = 13, ncores = 1)
+obj=preprocess(dataDir, targets=targets, blacklist=NULL, batch.vars=NULL, removeSNPs=T, population='EUR', usePredictedSex=F, runCNV=F, outdir='/icgc/dkfzlsdf/analysis/B080/pastor/skima_test/run4')
+preprocess(dataDir, sample.annotation, blacklist=NULL, batch.vars=NULL, removeSNPs=T, population='EUR', usePredictedSex=F, runCNV=F, ncores=1, outdir=getwd())
